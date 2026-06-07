@@ -1,0 +1,833 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Klikka Photobooth - Queue System</title>
+
+<!-- QRCode.js library -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+
+<style>
+/* ============================================================
+   THERMAL CSS (inline, agar bisa diprint tanpa file eksternal)
+   ============================================================ */
+@media print {
+  *{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
+  body>*:not(#thermal-wrapper){display:none!important}
+  #thermal-wrapper{display:block!important;position:static!important;left:auto!important}
+  @page{margin:0;padding:0;size:58mm auto}
+}
+#thermal-wrapper{display:none;position:fixed;left:-9999px;top:0}
+.thermal-ticket{width:54mm;padding:2mm 2mm;font-family:'Courier New',Courier,monospace;font-size:8pt;line-height:1.4;color:#000;background:#fff}
+.t-logo{text-align:center;margin-bottom:1mm}
+.t-logo-text{font-size:11pt;font-weight:bold;letter-spacing:2px;text-align:center;text-transform:uppercase}
+.t-divider{text-align:center;font-size:7pt;margin:1.5mm 0;overflow:hidden;white-space:nowrap}
+.t-divider::before{content:"- - - - - - - - - - - - - - - - - - - - -"}
+.t-center{text-align:center}.t-small{font-size:6.5pt}.t-bold{font-weight:bold}
+.t-title{font-size:7.5pt;text-align:center;text-transform:uppercase;letter-spacing:1px}
+.t-label{font-size:7pt;text-transform:uppercase;letter-spacing:.5px;text-align:center;opacity:.7}
+.t-number{font-size:28pt;font-weight:bold;font-family:'Courier New',Courier,monospace;text-align:center;letter-spacing:3px;line-height:1.1;margin:1mm 0}
+.t-booth-name{font-size:9pt;font-weight:bold;text-align:center;text-transform:uppercase;letter-spacing:2px}
+.t-theme{font-size:7.5pt;text-align:center;text-transform:uppercase}
+.t-location{font-size:7pt;text-align:center}
+.t-datetime{font-size:7.5pt;text-align:center}
+.t-qr-section{text-align:center;margin:1.5mm 0}
+.t-qr-section canvas,.t-qr-section img{width:28mm!important;height:28mm!important;display:block;margin:0 auto}
+.t-qr-label{font-size:6.5pt;text-align:center;margin-bottom:.5mm}
+.t-footer{font-size:6.5pt;text-align:center;margin-top:1mm;line-height:1.5}
+.t-scan-list{font-size:6.5pt;padding-left:3mm;margin:.5mm 0;list-style:none}
+.t-scan-list li::before{content:"- "}
+.t-spacer{height:1.5mm}.t-spacer-sm{height:.8mm}
+
+/* ============================================================
+   MAIN APP CSS
+   ============================================================ */
+:root{
+  --pink:#E91E8C;--pink-dark:#C01070;--pink-light:#FFE6F3;
+  --dark:#1a1a2e;--darker:#0f0f1f;
+  --gray:#6b7280;--light:#f9fafb;--white:#fff;
+  --green:#10b981;--amber:#f59e0b;--red:#ef4444;--blue:#3b82f6;
+  --radius:12px;--radius-sm:8px;
+  --shadow:0 4px 24px rgba(233,30,140,.12);
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--light);color:var(--dark);min-height:100vh}
+
+/* ---- APP VIEWS ---- */
+.view{display:none}
+.view.active{display:block}
+
+/* ---- NAVBAR (admin) ---- */
+.navbar{background:var(--dark);color:#fff;padding:0 20px;display:flex;align-items:center;height:56px;gap:16px;position:sticky;top:0;z-index:100;box-shadow:0 2px 12px rgba(0,0,0,.3)}
+.navbar-logo{font-size:18px;font-weight:800;letter-spacing:1px;color:var(--pink);flex:1}
+.navbar-logo span{color:#fff}
+.nav-btn{background:transparent;border:1px solid rgba(255,255,255,.2);color:#fff;padding:6px 14px;border-radius:20px;font-size:13px;cursor:pointer;transition:.2s}
+.nav-btn:hover,.nav-btn.active{background:var(--pink);border-color:var(--pink)}
+
+/* ---- ADMIN LAYOUT ---- */
+.admin-wrap{max-width:1280px;margin:0 auto;padding:24px 16px}
+.admin-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;flex-wrap:wrap;gap:12px}
+.admin-header h1{font-size:22px;font-weight:800}
+.admin-header .date-badge{background:var(--pink-light);color:var(--pink-dark);padding:6px 14px;border-radius:20px;font-size:13px;font-weight:600}
+
+/* ---- CARDS ---- */
+.card{background:var(--white);border-radius:var(--radius);padding:20px;box-shadow:0 2px 12px rgba(0,0,0,.06);border:1px solid #e5e7eb}
+.card-title{font-size:14px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--gray);margin-bottom:16px;display:flex;align-items:center;gap:8px}
+.card-title::before{content:'';width:4px;height:16px;background:var(--pink);border-radius:2px;display:inline-block}
+
+/* ---- BOOTHS GRID ---- */
+.booths-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px;margin-bottom:24px}
+.booth-card{background:var(--white);border-radius:var(--radius);border:2px solid #e5e7eb;padding:20px;transition:.2s;position:relative;overflow:hidden}
+.booth-card::before{content:'';position:absolute;top:0;left:0;right:0;height:4px;background:var(--pink)}
+.booth-card:hover{border-color:var(--pink);box-shadow:var(--shadow)}
+.booth-id-badge{display:inline-block;background:var(--dark);color:var(--pink);font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px;letter-spacing:1px;margin-bottom:8px}
+.booth-name{font-size:18px;font-weight:800;margin-bottom:4px}
+.booth-theme{font-size:13px;color:var(--gray);margin-bottom:12px}
+.booth-stats{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px}
+.stat-box{background:var(--light);border-radius:var(--radius-sm);padding:10px;text-align:center}
+.stat-box .stat-val{font-size:22px;font-weight:800;line-height:1;color:var(--dark)}
+.stat-box.active .stat-val{color:var(--green)}
+.stat-box.waiting .stat-val{color:var(--amber)}
+.stat-label{font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--gray);margin-top:2px}
+.booth-actions{display:flex;gap:8px;flex-wrap:wrap}
+
+/* ---- BUTTONS ---- */
+.btn{padding:8px 16px;border-radius:var(--radius-sm);font-size:13px;font-weight:600;cursor:pointer;border:none;transition:.18s;display:inline-flex;align-items:center;gap:6px;text-decoration:none}
+.btn-primary{background:var(--pink);color:#fff}
+.btn-primary:hover{background:var(--pink-dark)}
+.btn-success{background:var(--green);color:#fff}
+.btn-success:hover{background:#059669}
+.btn-warning{background:var(--amber);color:#fff}
+.btn-warning:hover{background:#d97706}
+.btn-danger{background:var(--red);color:#fff}
+.btn-danger:hover{background:#dc2626}
+.btn-secondary{background:#e5e7eb;color:var(--dark)}
+.btn-secondary:hover{background:#d1d5db}
+.btn-outline{background:transparent;border:1.5px solid var(--pink);color:var(--pink)}
+.btn-outline:hover{background:var(--pink);color:#fff}
+.btn-sm{padding:5px 10px;font-size:12px}
+.btn-full{width:100%;justify-content:center}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+
+/* ---- ADD BOOTH FORM ---- */
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}
+.form-group{display:flex;flex-direction:column;gap:6px}
+.form-group label{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--gray)}
+.form-group input,.form-group select{padding:9px 12px;border:1.5px solid #e5e7eb;border-radius:var(--radius-sm);font-size:14px;outline:none;transition:.2s}
+.form-group input:focus,.form-group select:focus{border-color:var(--pink);box-shadow:0 0 0 3px var(--pink-light)}
+
+/* ---- ACTIVITY LOG ---- */
+.log-table{width:100%;border-collapse:collapse;font-size:13px}
+.log-table th{background:var(--dark);color:#fff;padding:8px 12px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.5px}
+.log-table td{padding:7px 12px;border-bottom:1px solid #f3f4f6}
+.log-table tr:hover td{background:var(--light)}
+.badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600}
+.badge-print{background:#e0f2fe;color:#0369a1}
+.badge-call{background:#dcfce7;color:#166534}
+.badge-reset{background:#fee2e2;color:#991b1b}
+
+/* ---- MONTHLY TABLE ---- */
+.monthly-table{width:100%;border-collapse:collapse;font-size:13px}
+.monthly-table th{background:var(--pink);color:#fff;padding:8px 12px;text-align:left}
+.monthly-table td{padding:7px 12px;border-bottom:1px solid #f3f4f6}
+.monthly-table tr:hover td{background:var(--pink-light)}
+.total-row td{font-weight:700;background:var(--pink-light)}
+
+/* ---- TABS ---- */
+.tabs{display:flex;gap:4px;border-bottom:2px solid #e5e7eb;margin-bottom:20px}
+.tab-btn{padding:9px 18px;font-size:13px;font-weight:600;cursor:pointer;border:none;background:transparent;color:var(--gray);border-bottom:2px solid transparent;margin-bottom:-2px;transition:.2s}
+.tab-btn.active{color:var(--pink);border-bottom-color:var(--pink)}
+
+/* ---- MODAL ---- */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:200;display:flex;align-items:center;justify-content:center;padding:16px;opacity:0;pointer-events:none;transition:.2s}
+.modal-overlay.open{opacity:1;pointer-events:auto}
+.modal{background:#fff;border-radius:var(--radius);padding:28px;max-width:480px;width:100%;transform:translateY(-20px);transition:.2s}
+.modal-overlay.open .modal{transform:none}
+.modal h2{font-size:18px;font-weight:800;margin-bottom:16px}
+.modal-footer{display:flex;justify-content:flex-end;gap:10px;margin-top:20px}
+
+/* ---- QUEUE VIEW (public) ---- */
+.queue-view{min-height:100vh;background:linear-gradient(135deg,var(--dark) 0%,#2d1b4e 100%);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;color:#fff}
+.queue-logo{font-size:28px;font-weight:900;letter-spacing:2px;color:var(--pink);margin-bottom:8px}
+.queue-logo span{color:#fff}
+.queue-card{background:rgba(255,255,255,.08);backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,.15);border-radius:20px;padding:32px;max-width:360px;width:100%;text-align:center;margin:16px 0}
+.queue-ticket-label{font-size:12px;text-transform:uppercase;letter-spacing:2px;opacity:.7;margin-bottom:4px}
+.queue-ticket-no{font-size:48px;font-weight:900;letter-spacing:4px;color:var(--pink);font-family:'Courier New',monospace;line-height:1}
+.queue-booth-name{font-size:16px;font-weight:700;margin:8px 0 4px;text-transform:uppercase;letter-spacing:1px}
+.queue-theme{font-size:13px;opacity:.7;margin-bottom:20px}
+.queue-pos-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:20px}
+.queue-stat{background:rgba(255,255,255,.06);border-radius:12px;padding:14px 10px}
+.queue-stat-val{font-size:26px;font-weight:800;line-height:1}
+.queue-stat-val.highlight{color:var(--pink)}
+.queue-stat-val.green{color:var(--green)}
+.queue-stat-label{font-size:10px;text-transform:uppercase;letter-spacing:.5px;opacity:.6;margin-top:3px}
+.queue-status-badge{padding:8px 20px;border-radius:20px;font-size:13px;font-weight:700;display:inline-block;margin-bottom:16px}
+.queue-status-badge.waiting{background:rgba(245,158,11,.2);color:#fbbf24;border:1px solid rgba(245,158,11,.3)}
+.queue-status-badge.called{background:rgba(16,185,129,.2);color:#34d399;border:1px solid rgba(16,185,129,.3)}
+.queue-updated{font-size:11px;opacity:.4;margin-top:16px}
+.queue-refresh-btn{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);color:#fff;padding:8px 20px;border-radius:20px;font-size:13px;cursor:pointer;margin-top:8px;transition:.2s}
+.queue-refresh-btn:hover{background:rgba(255,255,255,.2)}
+
+/* ---- PRINT PREVIEW OVERLAY ---- */
+.print-preview-overlay{position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:300;display:flex;align-items:center;justify-content:center;padding:16px;opacity:0;pointer-events:none;transition:.2s}
+.print-preview-overlay.open{opacity:1;pointer-events:auto}
+.print-preview-box{background:#e5e7eb;border-radius:16px;padding:24px;max-width:320px;width:100%}
+.print-preview-box h3{font-size:16px;font-weight:700;text-align:center;margin-bottom:16px;color:var(--dark)}
+.print-preview-inner{background:#fff;box-shadow:0 4px 20px rgba(0,0,0,.2);margin-bottom:16px;padding:0}
+.print-preview-actions{display:flex;gap:8px;justify-content:center}
+
+/* ---- LOADING ---- */
+.spinner{width:32px;height:32px;border:3px solid #e5e7eb;border-top-color:var(--pink);border-radius:50%;animation:spin .7s linear infinite;margin:24px auto}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+.toast{position:fixed;bottom:24px;right:24px;background:var(--dark);color:#fff;padding:12px 20px;border-radius:var(--radius-sm);font-size:13px;z-index:999;opacity:0;transition:.3s;transform:translateY(12px)}
+.toast.show{opacity:1;transform:none}
+.toast.success{background:var(--green)}
+.toast.error{background:var(--red)}
+
+/* ---- MONTHLY FILTERS ---- */
+.filter-row{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:16px}
+.filter-row select,.filter-row input{padding:7px 12px;border:1.5px solid #e5e7eb;border-radius:var(--radius-sm);font-size:13px;outline:none}
+
+/* ---- SECTION HEADERS ---- */
+.section-title{font-size:18px;font-weight:800;margin-bottom:16px;display:flex;align-items:center;gap:10px}
+.section-title .icon{font-size:20px}
+
+@media(max-width:640px){
+  .form-row{grid-template-columns:1fr}
+  .booths-grid{grid-template-columns:1fr}
+  .queue-pos-grid{grid-template-columns:1fr 1fr}
+}
+</style>
+</head>
+<body>
+
+<!-- ============================================================
+     THERMAL PRINT WRAPPER (hidden, only visible on Ctrl+P)
+     ============================================================ -->
+<div id="thermal-wrapper">
+  <div class="thermal-ticket" id="thermal-ticket-content">
+    <!-- Populated by JS -->
+  </div>
+</div>
+
+<!-- ============================================================
+     VIEW: ADMIN
+     ============================================================ -->
+<div class="view active" id="view-admin">
+
+  <nav class="navbar">
+    <div class="navbar-logo">KLIKKA<span>QUEUE</span></div>
+    <button class="nav-btn" onclick="showTab('admin-booths')">Booths</button>
+    <button class="nav-btn" onclick="showTab('admin-activity')">Aktivitas</button>
+    <button class="nav-btn" onclick="showTab('admin-monthly')">Bulanan</button>
+    <button class="btn btn-outline btn-sm" onclick="loadAdminData()">↻ Refresh</button>
+  </nav>
+
+  <div class="admin-wrap">
+    <div class="admin-header">
+      <h1>Dashboard Admin</h1>
+      <div class="date-badge" id="today-badge">—</div>
+    </div>
+
+    <!-- TAB: BOOTHS -->
+    <div id="tab-admin-booths">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px">
+        <div class="section-title"><span class="icon">📸</span> Booth Photobooth</div>
+        <button class="btn btn-primary" onclick="openAddBoothModal()">+ Tambah Booth</button>
+      </div>
+
+      <div class="booths-grid" id="booths-grid">
+        <div class="card"><div class="spinner"></div></div>
+      </div>
+
+      <!-- Add Booth Modal -->
+      <div class="modal-overlay" id="modal-add-booth">
+        <div class="modal">
+          <h2>✨ Tambah Booth Baru</h2>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Booth ID (kode singkat)</label>
+              <input id="add-booth-id" type="text" placeholder="MRT" maxlength="6" style="text-transform:uppercase">
+            </div>
+            <div class="form-group">
+              <label>Nama Booth</label>
+              <input id="add-booth-name" type="text" placeholder="MRT Booth">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Tema / Konsep</label>
+              <input id="add-booth-theme" type="text" placeholder="MRT Futuristic">
+            </div>
+            <div class="form-group">
+              <label>Lokasi</label>
+              <input id="add-booth-location" type="text" placeholder="Klikka Photobooth Tulungagung">
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-secondary" onclick="closeModal('modal-add-booth')">Batal</button>
+            <button class="btn btn-primary" onclick="submitAddBooth()">Simpan</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Edit Booth Modal -->
+      <div class="modal-overlay" id="modal-edit-booth">
+        <div class="modal">
+          <h2>✏️ Edit Booth</h2>
+          <input type="hidden" id="edit-booth-id">
+          <div class="form-row">
+            <div class="form-group">
+              <label>Nama Booth</label>
+              <input id="edit-booth-name" type="text">
+            </div>
+            <div class="form-group">
+              <label>Tema / Konsep</label>
+              <input id="edit-booth-theme" type="text">
+            </div>
+          </div>
+          <div class="form-group" style="margin-bottom:12px">
+            <label>Lokasi</label>
+            <input id="edit-booth-location" type="text">
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-secondary" onclick="closeModal('modal-edit-booth')">Batal</button>
+            <button class="btn btn-primary" onclick="submitEditBooth()">Simpan</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB: ACTIVITY -->
+    <div id="tab-admin-activity" style="display:none">
+      <div class="section-title"><span class="icon">📋</span> Aktivitas Hari Ini</div>
+      <div class="card">
+        <div style="overflow-x:auto">
+          <table class="log-table" id="activity-table">
+            <thead>
+              <tr>
+                <th>Waktu</th>
+                <th>Aksi</th>
+                <th>Booth</th>
+                <th>Nomor Tiket</th>
+              </tr>
+            </thead>
+            <tbody id="activity-tbody">
+              <tr><td colspan="4" style="text-align:center;padding:20px;color:#9ca3af">Memuat data...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB: MONTHLY -->
+    <div id="tab-admin-monthly" style="display:none">
+      <div class="section-title"><span class="icon">📊</span> Rekap Bulanan</div>
+      <div class="card">
+        <div class="filter-row">
+          <select id="month-select">
+            <option value="1">Januari</option><option value="2">Februari</option>
+            <option value="3">Maret</option><option value="4">April</option>
+            <option value="5">Mei</option><option value="6">Juni</option>
+            <option value="7">Juli</option><option value="8">Agustus</option>
+            <option value="9">September</option><option value="10">Oktober</option>
+            <option value="11">November</option><option value="12">Desember</option>
+          </select>
+          <select id="year-select"></select>
+          <button class="btn btn-primary btn-sm" onclick="loadMonthlyRecap()">Tampilkan</button>
+          <button class="btn btn-secondary btn-sm" onclick="exportMonthlyCSV()">⬇ Export CSV</button>
+        </div>
+        <div style="overflow-x:auto">
+          <table class="monthly-table" id="monthly-table">
+            <thead>
+              <tr>
+                <th>Tanggal</th>
+                <th>Booth</th>
+                <th>Total Cetak</th>
+                <th>Terpanggil</th>
+              </tr>
+            </thead>
+            <tbody id="monthly-tbody">
+              <tr><td colspan="4" style="text-align:center;padding:20px;color:#9ca3af">Pilih bulan dan klik Tampilkan</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- admin-wrap -->
+</div>
+
+<!-- ============================================================
+     VIEW: QUEUE (Public via QR Code)
+     ============================================================ -->
+<div class="view" id="view-queue">
+  <div class="queue-view">
+    <div class="queue-logo">KLIKKA<span>QUEUE</span></div>
+    <p style="font-size:12px;opacity:.5;margin-bottom:4px;text-transform:uppercase;letter-spacing:2px">Status Antrian Real-time</p>
+
+    <div class="queue-card" id="queue-card">
+      <div class="spinner"></div>
+    </div>
+
+    <button class="queue-refresh-btn" onclick="loadQueuePage()">↻ Refresh</button>
+    <p id="queue-updated" class="queue-updated"></p>
+  </div>
+</div>
+
+<!-- ============================================================
+     PRINT PREVIEW OVERLAY
+     ============================================================ -->
+<div class="print-preview-overlay" id="print-preview-overlay">
+  <div class="print-preview-box">
+    <h3>🖨️ Preview Tiket</h3>
+    <div class="print-preview-inner" id="print-preview-inner">
+      <!-- ticket rendered here -->
+    </div>
+    <div class="print-preview-actions">
+      <button class="btn btn-secondary" onclick="closePrintPreview()">Tutup</button>
+      <button class="btn btn-primary" onclick="doPrint()">🖨️ Print Sekarang</button>
+    </div>
+  </div>
+</div>
+
+<!-- TOAST -->
+<div class="toast" id="toast"></div>
+
+<script>
+// ============================================================
+// CONFIG
+// ============================================================
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbzcKhUZPqfagq3AkTk4eE6i2bhMdAk2ng_phTja2YZgwq7bRDwqtbDVrewiaTGQYiWW5w/exec'; // <<< Ganti dengan URL deploy Apps Script kamu
+
+// ============================================================
+// ROUTING
+// ============================================================
+function init() {
+  const params = new URLSearchParams(window.location.search);
+  const view   = params.get('view');
+
+  if (view === 'queue') {
+    showView('queue');
+    loadQueuePage();
+  } else {
+    showView('admin');
+    loadAdminData();
+    setupYearSelect();
+  }
+}
+
+function showView(v) {
+  document.querySelectorAll('.view').forEach(el => el.classList.remove('active'));
+  document.getElementById('view-' + v).classList.add('active');
+}
+
+// ============================================================
+// API
+// ============================================================
+async function apiGet(params) {
+  const url = GAS_URL + '?' + new URLSearchParams(params);
+  const res  = await fetch(url);
+  return res.json();
+}
+
+async function apiPost(data) {
+  const res = await fetch(GAS_URL, {
+    method: 'POST',
+    body: JSON.stringify(data)
+  });
+  return res.json();
+}
+
+// ============================================================
+// ADMIN
+// ============================================================
+let adminData = null;
+
+async function loadAdminData() {
+  try {
+    adminData = await apiGet({ action: 'getAdminData' });
+    renderBooths(adminData.booths, adminData.boothStats);
+    renderActivityLog(adminData.todayLog);
+    document.getElementById('today-badge').textContent = formatDateID(adminData.today || new Date().toISOString().split('T')[0]);
+  } catch(e) {
+    showToast('Gagal memuat data: ' + e.message, 'error');
+  }
+}
+
+function renderBooths(booths, stats) {
+  const grid = document.getElementById('booths-grid');
+  if (!booths || !booths.length) {
+    grid.innerHTML = `<div class="card" style="grid-column:1/-1;text-align:center;padding:40px;color:#9ca3af">
+      <p style="font-size:40px;margin-bottom:12px">📸</p>
+      <p style="font-weight:600">Belum ada booth. Klik <strong>+ Tambah Booth</strong> untuk mulai.</p>
+    </div>`;
+    return;
+  }
+
+  grid.innerHTML = booths.map(b => {
+    const s = (stats && stats[b.boothId]) || {};
+    return `<div class="booth-card">
+      <div class="booth-id-badge">${b.boothId}</div>
+      <div class="booth-name">${b.name}</div>
+      <div class="booth-theme">🎨 ${b.theme || '—'}</div>
+      <div class="booth-stats">
+        <div class="stat-box active">
+          <div class="stat-val">${b.activeNumber || 0}</div>
+          <div class="stat-label">Nomor Aktif</div>
+        </div>
+        <div class="stat-box waiting">
+          <div class="stat-val">${s.waiting || 0}</div>
+          <div class="stat-label">Menunggu</div>
+        </div>
+      </div>
+      <div class="booth-actions">
+        <button class="btn btn-primary btn-sm btn-full" onclick="handlePrintTicket('${b.boothId}')">🖨️ Cetak Antrian</button>
+        <button class="btn btn-success btn-sm" onclick="handleCallNext('${b.boothId}')">📢 Panggil</button>
+        <button class="btn btn-secondary btn-sm" onclick="openEditBooth(${JSON.stringify(b).replace(/"/g,"'")})">✏️</button>
+        <button class="btn btn-danger btn-sm" onclick="handleDeleteBooth('${b.boothId}')">🗑</button>
+      </div>
+      <div style="margin-top:8px;font-size:11px;color:#9ca3af">
+        Tercetak hari ini: ${s.total||0} | Terpanggil: ${s.called||0}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function renderActivityLog(logs) {
+  const tbody = document.getElementById('activity-tbody');
+  if (!logs || !logs.length) {
+    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;padding:20px;color:#9ca3af">Belum ada aktivitas hari ini</td></tr>';
+    return;
+  }
+  tbody.innerHTML = logs.map(l => `
+    <tr>
+      <td>${l.time}</td>
+      <td><span class="badge badge-${l.action.toLowerCase()}">${l.action}</span></td>
+      <td>${l.boothId}</td>
+      <td><strong>${l.ticketNo}</strong></td>
+    </tr>
+  `).join('');
+}
+
+// ============================================================
+// PRINT TICKET
+// ============================================================
+async function handlePrintTicket(boothId) {
+  try {
+    const data = await apiPost({ action: 'printTicket', boothId });
+    if (data.error) { showToast(data.error, 'error'); return; }
+    renderThermalTicket(data);
+    showPrintPreview(data);
+    setTimeout(loadAdminData, 1000);
+  } catch(e) {
+    showToast('Error: ' + e.message, 'error');
+  }
+}
+
+function renderThermalTicket(d) {
+  const qrUrl   = d.qrUrl || '';
+  const ticketHtml = `
+<div class="thermal-ticket" id="ticket-inner">
+  <div class="t-logo">
+    <div class="t-logo-text">KLIKKA</div>
+  </div>
+  <div class="t-title">Nomor Antrian</div>
+  <div class="t-spacer-sm"></div>
+  <div class="t-location">${d.location || 'Klikka Photobooth'}</div>
+  <div class="t-divider"></div>
+  <div class="t-number">${d.ticketNo}</div>
+  <div class="t-booth-name">${d.boothName}</div>
+  <div class="t-theme">${d.theme || ''}</div>
+  <div class="t-divider"></div>
+  <div class="t-datetime">${d.datetime}</div>
+  <div class="t-divider"></div>
+  <div class="t-qr-label">Scan QR di bawah untuk:</div>
+  <ul class="t-scan-list">
+    <li>Cek posisi antrian real-time</li>
+  </ul>
+  <div class="t-qr-section" id="qr-container-thermal"></div>
+  <div class="t-divider"></div>
+  <div class="t-footer">Harap menunggu sampai nomor<br>kamu dipanggil. Terima kasih!</div>
+</div>`;
+
+  // Set ke thermal wrapper (untuk print)
+  document.getElementById('thermal-ticket-content').innerHTML = ticketHtml;
+  // Set ke preview
+  document.getElementById('print-preview-inner').innerHTML = ticketHtml.replace('id="qr-container-thermal"','id="qr-container-preview"');
+
+  // Generate QR
+  setTimeout(() => {
+    generateQR('qr-container-thermal', qrUrl, 106); // 28mm @ 96dpi ≈ 106px
+    generateQR('qr-container-preview', qrUrl, 106);
+  }, 100);
+}
+
+function generateQR(containerId, url, size) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  el.innerHTML = '';
+  try {
+    new QRCode(el, {
+      text: url || 'https://klikka.id',
+      width: size, height: size,
+      colorDark: '#000000', colorLight: '#ffffff',
+      correctLevel: QRCode.CorrectLevel.M
+    });
+  } catch(e) {}
+}
+
+function showPrintPreview(d) {
+  document.getElementById('print-preview-overlay').classList.add('open');
+}
+
+function closePrintPreview() {
+  document.getElementById('print-preview-overlay').classList.remove('open');
+}
+
+function doPrint() {
+  closePrintPreview();
+  setTimeout(() => window.print(), 200);
+}
+
+// ============================================================
+// CALL NEXT
+// ============================================================
+async function handleCallNext(boothId) {
+  try {
+    const data = await apiPost({ action: 'callNext', boothId });
+    if (data.error) { showToast(data.error, 'error'); return; }
+    showToast(`✅ Nomor ${data.calledTicket} dipanggil!`, 'success');
+    setTimeout(loadAdminData, 600);
+  } catch(e) {
+    showToast('Error: ' + e.message, 'error');
+  }
+}
+
+// ============================================================
+// BOOTH CRUD
+// ============================================================
+function openAddBoothModal() {
+  ['add-booth-id','add-booth-name','add-booth-theme','add-booth-location'].forEach(id => {
+    document.getElementById(id).value = '';
+  });
+  openModal('modal-add-booth');
+}
+
+async function submitAddBooth() {
+  const boothId  = document.getElementById('add-booth-id').value.trim().toUpperCase();
+  const name     = document.getElementById('add-booth-name').value.trim();
+  const theme    = document.getElementById('add-booth-theme').value.trim();
+  const location = document.getElementById('add-booth-location').value.trim();
+  if (!boothId || !name) { showToast('ID dan Nama booth wajib diisi', 'error'); return; }
+
+  const data = await apiPost({ action: 'addBooth', boothId, name, theme, location });
+  if (data.error) { showToast(data.error, 'error'); return; }
+  showToast('Booth berhasil ditambahkan!', 'success');
+  closeModal('modal-add-booth');
+  loadAdminData();
+}
+
+function openEditBooth(b) {
+  document.getElementById('edit-booth-id').value     = b.boothId;
+  document.getElementById('edit-booth-name').value   = b.name;
+  document.getElementById('edit-booth-theme').value  = b.theme;
+  document.getElementById('edit-booth-location').value = b.location;
+  openModal('modal-edit-booth');
+}
+
+async function submitEditBooth() {
+  const boothId  = document.getElementById('edit-booth-id').value;
+  const name     = document.getElementById('edit-booth-name').value.trim();
+  const theme    = document.getElementById('edit-booth-theme').value.trim();
+  const location = document.getElementById('edit-booth-location').value.trim();
+
+  const data = await apiPost({ action: 'updateBooth', boothId, name, theme, location });
+  if (data.error) { showToast(data.error, 'error'); return; }
+  showToast('Booth berhasil diupdate!', 'success');
+  closeModal('modal-edit-booth');
+  loadAdminData();
+}
+
+async function handleDeleteBooth(boothId) {
+  if (!confirm(`Hapus booth ${boothId}? Semua data antrian akan tetap tersimpan.`)) return;
+  const data = await apiPost({ action: 'deleteBooth', boothId });
+  if (data.error) { showToast(data.error, 'error'); return; }
+  showToast('Booth dihapus.', 'success');
+  loadAdminData();
+}
+
+// ============================================================
+// MONTHLY RECAP
+// ============================================================
+function setupYearSelect() {
+  const sel = document.getElementById('year-select');
+  const now = new Date();
+  sel.innerHTML = '';
+  for (let y = now.getFullYear(); y >= now.getFullYear() - 2; y--) {
+    sel.innerHTML += `<option value="${y}">${y}</option>`;
+  }
+  document.getElementById('month-select').value = now.getMonth() + 1;
+}
+
+async function loadMonthlyRecap() {
+  const year  = document.getElementById('year-select').value;
+  const month = document.getElementById('month-select').value;
+  const data  = await apiGet({ action: 'getMonthlyRecap', year, month });
+  renderMonthlyTable(data.recap || {});
+}
+
+function renderMonthlyTable(recap) {
+  const tbody = document.getElementById('monthly-tbody');
+  const rows  = [];
+  let totalPrint = 0, totalCall = 0;
+
+  Object.keys(recap).sort().forEach(date => {
+    Object.keys(recap[date]).forEach(bid => {
+      const s = recap[date][bid];
+      totalPrint += s.total;
+      totalCall  += s.called;
+      rows.push(`<tr>
+        <td>${formatDateID(date)}</td>
+        <td><span class="booth-id-badge" style="background:#1a1a2e;color:#e91e8c;font-size:11px">${bid}</span></td>
+        <td>${s.total}</td>
+        <td>${s.called}</td>
+      </tr>`);
+    });
+  });
+
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;padding:20px;color:#9ca3af">Tidak ada data pada periode ini</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = rows.join('') + `<tr class="total-row">
+    <td colspan="2">TOTAL</td>
+    <td>${totalPrint}</td>
+    <td>${totalCall}</td>
+  </tr>`;
+}
+
+function exportMonthlyCSV() {
+  const rows = [...document.querySelectorAll('#monthly-tbody tr')];
+  if (!rows.length) return;
+
+  let csv = 'Tanggal,Booth,Total Cetak,Terpanggil\n';
+  rows.forEach(row => {
+    const cols = [...row.querySelectorAll('td')].map(td => td.innerText.trim());
+    if (cols.length === 4) csv += cols.join(',') + '\n';
+  });
+
+  const year  = document.getElementById('year-select').value;
+  const month = document.getElementById('month-select').value;
+  const blob  = new Blob([csv], { type: 'text/csv' });
+  const a     = document.createElement('a');
+  a.href      = URL.createObjectURL(blob);
+  a.download  = `klikka-rekap-${year}-${String(month).padStart(2,'0')}.csv`;
+  a.click();
+}
+
+// ============================================================
+// QUEUE PAGE (Public)
+// ============================================================
+async function loadQueuePage() {
+  const params   = new URLSearchParams(window.location.search);
+  const boothId  = params.get('booth');
+  const ticketNo = params.get('ticket');
+
+  const card = document.getElementById('queue-card');
+
+  if (!boothId || !ticketNo) {
+    card.innerHTML = '<p style="color:#ef4444;font-weight:600">❌ URL tidak valid</p>';
+    return;
+  }
+
+  card.innerHTML = '<div class="spinner"></div>';
+
+  try {
+    const d = await apiGet({ action: 'getQueuePage', boothId, ticketNumber: ticketNo });
+    if (d.error) { card.innerHTML = `<p style="color:#ef4444">${d.error}</p>`; return; }
+
+    const statusBadge = d.myStatus === 'called'
+      ? '<div class="queue-status-badge called">✅ Nomor Kamu Sedang Dipanggil!</div>'
+      : '<div class="queue-status-badge waiting">⏳ Sedang Menunggu</div>';
+
+    card.innerHTML = `
+      <div class="queue-ticket-label">Nomor Tiket Kamu</div>
+      <div class="queue-ticket-no">${d.ticketNumber}</div>
+      <div class="queue-booth-name">${d.boothName}</div>
+      <div class="queue-theme">🎨 ${d.theme || ''}</div>
+      ${statusBadge}
+      <div class="queue-pos-grid">
+        <div class="queue-stat">
+          <div class="queue-stat-val green">${d.activeNumber || '—'}</div>
+          <div class="queue-stat-label">Nomor Aktif</div>
+        </div>
+        <div class="queue-stat">
+          <div class="queue-stat-val highlight">${d.myPosition || '—'}</div>
+          <div class="queue-stat-label">Posisi Kamu</div>
+        </div>
+        <div class="queue-stat">
+          <div class="queue-stat-val">${d.waitCount || 0}</div>
+          <div class="queue-stat-label">Total Antri</div>
+        </div>
+      </div>
+      ${d.nextNumber ? `<p style="font-size:12px;opacity:.6">Nomor berikutnya: <strong>${d.nextNumber}</strong></p>` : ''}
+    `;
+
+    document.getElementById('queue-updated').textContent = 'Diperbarui: ' + d.updatedAt;
+
+    // Auto-refresh setiap 15 detik
+    setTimeout(loadQueuePage, 15000);
+  } catch(e) {
+    card.innerHTML = `<p style="color:#ef4444">Gagal memuat data</p>`;
+  }
+}
+
+// ============================================================
+// UI HELPERS
+// ============================================================
+function showTab(tab) {
+  ['admin-booths','admin-activity','admin-monthly'].forEach(t => {
+    document.getElementById('tab-' + t).style.display = t === tab ? 'block' : 'none';
+  });
+  document.querySelectorAll('.nav-btn').forEach((b,i) => {
+    const tabs = ['admin-booths','admin-activity','admin-monthly'];
+    b.classList.toggle('active', tabs[i] === tab);
+  });
+  if (tab === 'admin-activity') loadAdminData();
+}
+
+function openModal(id) {
+  document.getElementById(id).classList.add('open');
+}
+function closeModal(id) {
+  document.getElementById(id).classList.remove('open');
+}
+document.querySelectorAll('.modal-overlay').forEach(el => {
+  el.addEventListener('click', e => { if (e.target === el) el.classList.remove('open'); });
+});
+
+function showToast(msg, type) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className   = 'toast show' + (type ? ' ' + type : '');
+  setTimeout(() => t.className = 'toast', 3000);
+}
+
+function formatDateID(str) {
+  if (!str) return '—';
+  const [y,m,d] = str.split('-');
+  const months  = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
+  return `${parseInt(d)} ${months[parseInt(m)-1]} ${y}`;
+}
+
+// ============================================================
+// BOOT
+// ============================================================
+document.addEventListener('DOMContentLoaded', init);
+</script>
+</body>
+</html>
